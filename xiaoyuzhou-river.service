@@ -1,0 +1,16 @@
+[Unit]
+Description=xiaoyuzhou river (tailnet only)
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/xiaoyuzhou-river
+ExecStart=/usr/bin/python3 server.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
