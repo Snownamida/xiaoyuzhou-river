@@ -25,6 +25,14 @@ CREATE TABLE IF NOT EXISTS subscriptions(
     pid TEXT PRIMARY KEY, title TEXT, author TEXT, image TEXT, updated INTEGER
 );
 CREATE TABLE IF NOT EXISTS profile(k TEXT PRIMARY KEY, v TEXT, updated INTEGER);
+CREATE TABLE IF NOT EXISTS mileage(
+    pid TEXT PRIMARY KEY, title TEXT, author TEXT, image TEXT,
+    played_seconds INTEGER, updated INTEGER
+);
+CREATE TABLE IF NOT EXISTS monthly(
+    year INTEGER, month INTEGER, played_days INTEGER, played_seconds INTEGER,
+    updated INTEGER, PRIMARY KEY(year, month)
+);
 """
 
 
@@ -34,6 +42,11 @@ def db():
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA busy_timeout=20000")
     con.executescript(SCHEMA)
+    cols = [r[1] for r in con.execute("PRAGMA table_info(episodes)")]
+    if "shownotes" not in cols:
+        con.execute("ALTER TABLE episodes ADD COLUMN shownotes TEXT")
+    if "description" not in cols:
+        con.execute("ALTER TABLE episodes ADD COLUMN description TEXT")
     return con
 
 
@@ -59,12 +72,14 @@ def _upsert_episode(cur, e, now):
     if not e or not e.get("eid"):
         return
     cur.execute(
-        "INSERT INTO episodes(eid,pid,title,duration,pub_date,image,media_key,updated)"
-        " VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(eid) DO UPDATE SET"
+        "INSERT INTO episodes(eid,pid,title,duration,pub_date,image,media_key,shownotes,description,updated)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(eid) DO UPDATE SET"
         " title=excluded.title, duration=excluded.duration, pub_date=excluded.pub_date,"
-        " image=excluded.image, media_key=excluded.media_key, updated=excluded.updated",
+        " image=excluded.image, media_key=excluded.media_key,"
+        " shownotes=excluded.shownotes, description=excluded.description, updated=excluded.updated",
         (e["eid"], e.get("pid") or "", e.get("title") or "", e.get("duration") or 0,
-         e.get("pubDate") or "", _img(e), e.get("mediaKey") or "", now))
+         e.get("pubDate") or "", _img(e), e.get("mediaKey") or "",
+         e.get("shownotes") or "", e.get("description") or "", now))
 
 
 def run():
@@ -125,6 +140,58 @@ def run():
             stats["progress"] += 1
         con.commit()
         time.sleep(config.GAP)
+
+    # 每播客累计收听
+    cursor = None
+    stats["mileage"] = 0
+    for page in range(100):
+        try:
+            items, cursor = x.mileage(cursor)
+        except XYZError as e:
+            stats["errors"].append(f"mileage: {e}")
+            break
+        if not items:
+            break
+        for it in items:
+            p = it.get("podcast") or {}
+            if not p.get("pid"):
+                continue
+            cur.execute("INSERT OR REPLACE INTO mileage(pid,title,author,image,played_seconds,updated)"
+                        " VALUES(?,?,?,?,?,?)",
+                        (p["pid"], p.get("title") or "", p.get("author") or "",
+                         _img(p), it.get("playedSeconds") or 0, now))
+            stats["mileage"] += 1
+        con.commit()
+        if not cursor:
+            break
+        time.sleep(config.GAP)
+
+    # 月度统计：从最早一条播放记录所在月开始
+    stats["months"] = 0
+    try:
+        prof = x.profile()
+        uid = prof.get("uid")
+        first = cur.execute("SELECT MIN(played_at) FROM plays").fetchone()[0]
+        if uid and first:
+            y, m = int(first[0:4]), int(first[5:7])
+            ty, tm = time.localtime().tm_year, time.localtime().tm_mon
+            while (y, m) <= (ty, tm):
+                try:
+                    w = x.wrapped(uid, y, m)
+                    if w:
+                        cur.execute("INSERT OR REPLACE INTO monthly(year,month,played_days,played_seconds,updated)"
+                                    " VALUES(?,?,?,?,?)",
+                                    (y, m, w.get("playedDays") or 0, w.get("playedSeconds") or 0, now))
+                        stats["months"] += 1
+                except XYZError as e:
+                    stats["errors"].append(f"wrapped {y}-{m}: {e}")
+                con.commit()
+                m += 1
+                if m > 12:
+                    y, m = y + 1, 1
+                time.sleep(config.GAP)
+    except XYZError as e:
+        stats["errors"].append(f"wrapped: {e}")
 
     # 订阅
     cursor = None

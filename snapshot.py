@@ -10,7 +10,7 @@ import time
 import config
 
 DEST = os.environ.get("XYZ_DATA_DIR", os.path.expanduser("~/xiaoyuzhou-data"))
-TABLES = ("podcasts", "episodes", "plays", "subscriptions", "profile")
+TABLES = ("podcasts", "episodes", "plays", "subscriptions", "profile", "mileage", "monthly")
 
 
 def export():

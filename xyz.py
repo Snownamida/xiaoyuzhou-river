@@ -92,6 +92,17 @@ class XYZ:
         d = self._request("/v1/playback-progress/list", {"eids": eids})
         return d.get("data") or []
 
+    def mileage(self, cursor=None, rank="TOTAL"):
+        body = {"rank": rank}
+        if cursor:
+            body["loadMoreKey"] = cursor
+        d = self._request("/v1/mileage/list", body)
+        return d.get("data") or [], d.get("loadMoreKey")
+
+    def wrapped(self, uid, year, month):
+        d = self._request(f"/v1/monthly-wrapped/get?uid={uid}&year={year}&month={month}")
+        return d.get("data") or {}
+
     def subscriptions(self, cursor=None):
         body = {"sortBy": "subscribedAt"}
         if cursor:
