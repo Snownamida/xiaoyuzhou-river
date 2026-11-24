@@ -104,7 +104,7 @@ def nightly_loop():
             if done != today:
                 try:
                     last = (read_run() or {}).get("ts", 0)
-                    if time.time() - last > 12 * 3600:
+                    if time.strftime("%F", time.localtime(last)) != today:
                         print("快照前先补一次同步", flush=True)
                         sync_mod.run()
                     snapshot.run()
