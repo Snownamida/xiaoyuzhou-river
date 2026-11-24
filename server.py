@@ -103,6 +103,10 @@ def nightly_loop():
             today = time.strftime("%F")
             if done != today:
                 try:
+                    last = (read_run() or {}).get("ts", 0)
+                    if time.time() - last > 12 * 3600:
+                        print("快照前先补一次同步", flush=True)
+                        sync_mod.run()
                     snapshot.run()
                     with open(os.path.join(config.DATA, "nightly.json"), "w") as f:
                         json.dump({"date": today, "ts": int(time.time())}, f)
